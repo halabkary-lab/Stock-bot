@@ -9,7 +9,14 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 
-# سيرفر وهمي للحفاظ على تشغيل Render
+# قائمة الأسهم الأكثر تداولاً ومضاربة في السوق الأمريكي
+WATCHLIST = [
+    "AAPL", "TSLA", "NVDA", "AMD", "AMZN", "MSFT", "META", "GOOGL",
+    "PLTR", "NFLX", "COIN", "MARA", "BA", "BABA", "INTC", "MU",
+    "SMCI", "ARM", "RIVN", "LCID", "SOFI", "UBER", "PYPL", "SQ",
+    "DIS", "NKE", "JPM", "BAC", "V", "MA"
+]
+
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -21,14 +28,13 @@ def run_web_server():
     server = HTTPServer(('0.0.0.0', port), SimpleHTTPRequestHandler)
     server.serve_forever()
 
-# خوارزمية تحليل السهم
 def analyze_stock(ticker_symbol):
     try:
         stock = yf.Ticker(ticker_symbol)
         df = stock.history(period="100d")
 
-        if df.empty:
-            return f"❌ لم يتم العثور على بيانات للسهم `{ticker_symbol}`. تأكد من الرمز."
+        if df.empty or len(df) < 50:
+            return None
 
         df['RSI'] = ta.momentum.rsi(df['Close'], window=14)
         df['EMA20'] = ta.trend.ema_indicator(df['Close'], window=20)
@@ -39,50 +45,86 @@ def analyze_stock(ticker_symbol):
         ema20_val = df['EMA20'].iloc[-1]
         ema50_val = df['EMA50'].iloc[-1]
 
+        # تصنيف الإشارة وتقييمها برقم للفرز
+        score = 0
         if ema20_val > ema50_val and rsi_val < 65:
             signal = "🟢 فرصة شراء / دخول ممتازة"
-            entry_price = current_price
-            target_1 = current_price * 1.03
-            target_2 = current_price * 1.06
-            stop_loss = current_price * 0.97
+            score = 3
         elif rsi_val <= 35:
             signal = "🟡 إشارة ارتداد / مناطق تجميع"
-            entry_price = current_price
-            target_1 = current_price * 1.04
-            target_2 = current_price * 1.08
-            stop_loss = current_price * 0.95
+            score = 2
         elif rsi_val >= 70:
-            signal = "🔴 تشبع شرائي / خروج أو تجنب الدخول"
-            entry_price = current_price
-            target_1 = current_price * 1.01
-            target_2 = current_price * 1.02
-            stop_loss = current_price * 0.98
+            signal = "🔴 تشبع شرائي / خروج"
+            score = 0
         else:
-            signal = "⚪ مسار محايد / انتظار فرصة أفضل"
-            entry_price = current_price
-            target_1 = current_price * 1.03
-            target_2 = current_price * 1.05
-            stop_loss = current_price * 0.97
+            signal = "⚪ مسار محايد"
+            score = 1
 
-        return (
-            f"📊 **تقرير تحليل السهم: {ticker_symbol.upper()}**\n\n"
-            f"💵 **السعر الحالي:** ${current_price:.2f}\n"
-            f"📌 **التوصية:** {signal}\n\n"
-            f"📈 **مؤشر RSI:** {rsi_val:.1f}\n"
-            f"🔹 **EMA 20:** ${ema20_val:.2f}\n"
-            f"🔹 **EMA 50:** ${ema50_val:.2f}\n\n"
-            f"🎯 **سعر الدخول المقترح:** ${entry_price:.2f}\n"
-            f"🥇 **الهدف الأول:** ${target_1:.2f}\n"
-            f"🥈 **الهدف الثاني:** ${target_2:.2f}\n"
-            f"🛑 **وقف الخسارة:** ${stop_loss:.2f}\n"
-        )
+        entry_price = current_price
+        target_1 = current_price * 1.03
+        target_2 = current_price * 1.06
+        stop_loss = current_price * 0.97
 
-    except Exception as e:
-        return f"⚠️ حدث خطأ أثناء تحليل السهم: {str(e)}"
+        return {
+            "symbol": ticker_symbol.upper(),
+            "price": current_price,
+            "rsi": rsi_val,
+            "ema20": ema20_val,
+            "ema50": ema50_val,
+            "signal": signal,
+            "score": score,
+            "entry": entry_price,
+            "target1": target_1,
+            "target2": target_2,
+            "stop": stop_loss
+        }
+    except Exception:
+        return None
+
+def format_report(data):
+    return (
+        f"📊 **تقرير تحليل السهم: {data['symbol']}**\n\n"
+        f"💵 **السعر الحالي:** ${data['price']:.2f}\n"
+        f"📌 **التوصية:** {data['signal']}\n\n"
+        f"📈 **مؤشر RSI:** {data['rsi']:.1f}\n"
+        f"🔹 **EMA 20:** ${data['ema20']:.2f}\n"
+        f"🔹 **EMA 50:** ${data['ema50']:.2f}\n\n"
+        f"🎯 **سعر الدخول المقترح:** ${data['entry']:.2f}\n"
+        f"🥇 **الهدف الأول:** ${data['target1']:.2f}\n"
+        f"🥈 **الهدف الثاني:** ${data['target2']:.2f}\n"
+        f"🛑 **وقف الخسارة:** ${data['stop']:.2f}\n"
+    )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = "أهلاً بك! أرسل لي رمز أي سهم (مثال: AAPL أو TSLA) وسأقوم بتحليله لك فوراً."
+    msg = (
+        "أهلاً بك! 👋\n\n"
+        "🔹 أرسل **رمز أي سهم** (مثل `AAPL` أو `NVDA`) لتحليله فوراً.\n"
+        "⚡ أرسل الأمر **/top** لمسح السوق واستخراج **أفضل 3 أسهم للشراء الآن**."
+    )
     await update.message.reply_text(msg, parse_mode="Markdown")
+
+async def scan_top_stocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🔍 جاري فحص قائمة أفضل الأسهم في السوق الآن... يرجى الانتظار لحضات.")
+    
+    results = []
+    for ticker in WATCHLIST:
+        data = analyze_stock(ticker)
+        if data and data['score'] >= 2:  # فلترة الأسهم الممتازة فقط (شراء أو ارتداد)
+            results.append(data)
+
+    # ترتيب النتائج بناءً على قوة الإشارة
+    results.sort(key=lambda x: (x['score'], -x['rsi']), reverse=True)
+    top_3 = results[:3]
+
+    if not top_3:
+        await update.message.reply_text("⚪ لا توجد فرص دخول واضحة في الأسهم المراقبة حالياً. يفضل الانتظار.")
+        return
+
+    response_text = "🔥 **أفضل الفرص المتاحة للشراء/المضاربة الآن:**\n\n"
+    for item in top_3:
+        response_text += format_report(item) + "\n-------------------\n"
+
+    await update.message.reply_text(response_text, parse_mode="Markdown")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip().upper()
@@ -90,15 +132,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     await update.message.reply_text(f"⏳ جاري تحليل السهم {text}...")
-    result = analyze_stock(text)
-    await update.message.reply_text(result, parse_mode="Markdown")
+    data = analyze_stock(text)
+    if data:
+        await update.message.reply_text(format_report(data), parse_mode="Markdown")
+    else:
+        await update.message.reply_text(f"❌ لم يتم العثور على بيانات للسهم `{text}`. تأكد من الرمز.")
 
 if __name__ == '__main__':
     threading.Thread(target=run_web_server, daemon=True).start()
     
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("scan", start))
+    app.add_handler(CommandHandler("top", scan_top_stocks))
+    app.add_handler(CommandHandler("scan", scan_top_stocks))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     app.run_polling()
