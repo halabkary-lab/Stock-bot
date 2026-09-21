@@ -37,7 +37,4 @@ def main():
     app.add_handler(CommandHandler("scan", scan))
     
     logging.info("Starting Telegram Bot...")
-    app.run_polling(drop_pending_updates=True)
-
-if __name__ == "__main__":
-    main()
+    app.run_polling(
