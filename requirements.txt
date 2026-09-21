@@ -1,1 +1,6 @@
 
+python-telegram-bot
+yfinance
+pandas
+requests
+nest_asyncio
