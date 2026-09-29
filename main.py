@@ -141,7 +141,7 @@ async def scan_top_stocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if data and data['score'] >= 2:
             results.append(data)
 
-    results.sort(key=label: x['score'], reverse=True)
+    results.sort(key=lambda x: x['score'], reverse=True)
     top_3 = results[:3]
 
     if not top_3:
