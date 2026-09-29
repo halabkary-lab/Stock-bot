@@ -1,4 +1,5 @@
 import os
+import sys
 import datetime
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -9,6 +10,9 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
+
+if not TOKEN:
+    print("❌ ERROR: TELEGRAM_TOKEN variable is not set in Render environment variables!")
 
 WATCHLIST = [
     "AAPL", "TSLA", "NVDA", "AMD", "AMZN", "MSFT", "META", "GOOGL",
@@ -30,22 +34,17 @@ def run_web_server():
 def analyze_option_signal(ticker_symbol):
     try:
         symbol_upper = ticker_symbol.upper()
-        
-        # تحويل رموز مؤشر S&P 500
         if symbol_upper in ["SPX", "S&P500", "SP500", "SPXW"]:
             search_symbol = "^GSPC"
         else:
             search_symbol = symbol_upper
 
-        # استخدام yf.download لجلب البيانات بثبات وتفادي أخطاء Ticker API
         df = yf.download(search_symbol, period="100d", interval="1d", progress=False)
 
-        # التعامل مع أشكال DataFrames التراكمية في yfinance الحديثة
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
         if df.empty or len(df) < 50:
-            # خيار احتياطي في حال جدار حماية Yahoo على ^GSPC (استخدام صندوق SPY)
             if search_symbol == "^GSPC":
                 df = yf.download("SPY", period="100d", interval="1d", progress=False)
                 if isinstance(df.columns, pd.MultiIndex):
@@ -54,7 +53,6 @@ def analyze_option_signal(ticker_symbol):
         if df.empty or len(df) < 50:
             return None
 
-        # حساب المؤشرات الفنية
         df['RSI'] = ta.momentum.rsi(df['Close'], window=14)
         df['EMA20'] = ta.trend.ema_indicator(df['Close'], window=20)
         df['EMA50'] = ta.trend.ema_indicator(df['Close'], window=50)
@@ -64,8 +62,7 @@ def analyze_option_signal(ticker_symbol):
         ema20_val = float(df['EMA20'].iloc[-1])
         ema50_val = float(df['EMA50'].iloc[-1])
 
-        # تحديد التوصية
-        if ema20_val > ema50_val and rsi_val >= 40 and rsi_val < 70:
+        if ema20_val > ema50_val and 40 <= rsi_val < 70:
             option_type = "CALL 🟢 (صعود)"
             strike = round(current_price / 10) * 10
             signal_desc = "اتجاه صاعد - مناسب لشراء عقود Call"
@@ -102,7 +99,7 @@ def analyze_option_signal(ticker_symbol):
             "score": score
         }
     except Exception as e:
-        print(f"Error analyzing {ticker_symbol}: {e}")
+        print(f"Error in analysis: {e}")
         return None
 
 def format_option_report(data):
@@ -134,7 +131,7 @@ async def analyze_spx_option(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if data:
         await update.message.reply_text(format_option_report(data), parse_mode="Markdown")
     else:
-        await update.message.reply_text("❌ تعذر تحليل عقود S&P 500 حالياً. حاول مرة أخرى.")
+        await update.message.reply_text("❌ تعذر تحليل عقود S&P 500 حالياً.")
 
 async def scan_top_stocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔍 جاري فحص الفرص والعقود المتاحة في السوق...")
@@ -144,7 +141,7 @@ async def scan_top_stocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if data and data['score'] >= 2:
             results.append(data)
 
-    results.sort(key=lambda x: x['score'], reverse=True)
+    results.sort(key=label: x['score'], reverse=True)
     top_3 = results[:3]
 
     if not top_3:
@@ -176,11 +173,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 if __name__ == '__main__':
     threading.Thread(target=run_web_server, daemon=True).start()
     
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("spx", analyze_spx_option))
-    app.add_handler(CommandHandler("top", scan_top_stocks))
-    app.add_handler(CommandHandler("scan", scan_top_stocks))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
-    app.run_polling()
+    if TOKEN:
+        app = ApplicationBuilder().token(TOKEN).build()
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("spx", analyze_spx_option))
+        app.add_handler(CommandHandler("top", scan_top_stocks))
+        app.add_handler(CommandHandler("scan", scan_top_stocks))
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        
+        app.run_polling()
+    else:
+        print("⚠️ Bot startup aborted: TELEGRAM_TOKEN missing.")
