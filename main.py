@@ -129,7 +129,7 @@ def format_option_report(data):
         f"• **التاريخ المقترح:** `{data['date']}` (0DTE / يومي)\n"
         f"• **صيغة العقد:** `({data['symbol']}) {data['date']} {data['strike']} {opt_tag}`\n\n"
         f"📈 **مؤشر RSI:** {data['rsi']:.1f}\n"
-        f"🔹 **EMA 20:** ${data['ema20']:.2f} \vert{} **EMA 50:**${data['ema50']:.2f}\n"
+        f"🔹 **EMA 20:** ${data['ema20']:.2f} | **EMA 50:** ${data['ema50']:.2f}\n"
     )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
