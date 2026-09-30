@@ -84,9 +84,9 @@ def analyze_option_signal(ticker_symbol):
             signal_desc = "تذبذب جانبي - يفضل الانتظار"
             score = 0
 
-        # 2. حساب الـ Strike مع خيار OTM اقتصادي (بعيد بـ 40 نقطة)
+        # 2. حساب الـ Strike مع خيار OTM اقتصادي (بعيد بـ 75 نقطة)
         if search_symbol == "^GSPC":
-            otm_distance = 40
+            otm_distance = 75
             if option_direction == "CALL":
                 raw_strike = current_price + otm_distance
             elif option_direction == "PUT":
