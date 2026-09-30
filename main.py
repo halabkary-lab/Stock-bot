@@ -62,26 +62,41 @@ def analyze_option_signal(ticker_symbol):
         ema20_val = float(df['EMA20'].iloc[-1])
         ema50_val = float(df['EMA50'].iloc[-1])
 
+        # 1. تحديد الاتجاه
         if ema20_val > ema50_val and 40 <= rsi_val < 70:
+            option_direction = "CALL"
             option_type = "CALL 🟢 (صعود)"
-            strike = round(current_price / 10) * 10
             signal_desc = "اتجاه صاعد - مناسب لشراء عقود Call"
             score = 3
         elif rsi_val <= 35:
+            option_direction = "CALL"
             option_type = "CALL 🟢 (ارتداد من قاع)"
-            strike = round(current_price / 10) * 10
             signal_desc = "مناطق تشبع بيعي - فرصة ارتداد شرائي"
             score = 2
         elif ema20_val < ema50_val or rsi_val >= 70:
+            option_direction = "PUT"
             option_type = "PUT 🔴 (هبوط / تصحيح)"
-            strike = round(current_price / 10) * 10
             signal_desc = "اتجاه هابط أو تشبع شرائي - مناسب لعقود Put"
             score = 1
         else:
+            option_direction = "NEUTRAL"
             option_type = "محايد ⚪"
-            strike = round(current_price / 10) * 10
             signal_desc = "تذبذب جانبي - يفضل الانتظار"
             score = 0
+
+        # 2. حساب الـ Strike المبتعد بـ 40 نقطة (OTM)
+        if search_symbol == "^GSPC":
+            otm_distance = 40
+            if option_direction == "CALL":
+                raw_strike = current_price + otm_distance
+            elif option_direction == "PUT":
+                raw_strike = current_price - otm_distance
+            else:
+                raw_strike = current_price
+
+            strike = round(raw_strike / 5) * 5
+        else:
+            strike = round(current_price / 2.5) * 2.5
 
         today_str = datetime.date.today().strftime("%b %d").upper()
         display_symbol = "SPX" if search_symbol == "^GSPC" else symbol_upper
@@ -105,28 +120,28 @@ def analyze_option_signal(ticker_symbol):
 def format_option_report(data):
     opt_tag = data['option_type'].split()[0]
     return (
-        f"🎯 **توصية عقد أوبشن: {data['symbol']}**\n\n"
+        f"🎯 **توصية عقد أوبشن اقتصادي OTM: {data['symbol']}**\n\n"
         f"💵 **سعر المؤشر/السهم الحالي:** ${data['price']:.2f}\n"
         f"📊 **الحالة:** {data['signal']}\n\n"
-        f"🎫 **توصية العقد المقترح:**\n"
+        f"🎫 **توصية العقد المقترح (بعيد عن السعر ~40 نقطة):**\n"
         f"• **النوع:** `{data['option_type']}`\n"
         f"• **سعر الإضراب (Strike):** `${data['strike']}`\n"
         f"• **التاريخ المقترح:** `{data['date']}` (0DTE / يومي)\n"
         f"• **صيغة العقد:** `({data['symbol']}) {data['date']} {data['strike']} {opt_tag}`\n\n"
         f"📈 **مؤشر RSI:** {data['rsi']:.1f}\n"
-        f"🔹 **EMA 20:** ${data['ema20']:.2f} | **EMA 50:** ${data['ema50']:.2f}\n"
+        f"🔹 **EMA 20:** ${data['ema20']:.2f} \vert{} **EMA 50:**${data['ema50']:.2f}\n"
     )
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (
         "أهلاً بك! 👋\n\n"
-        "📈 أرسل **/spx** أو كلمة **SPX** للحصول على توصية عقود **S&P 500 Options** مباشرة.\n"
+        "📈 أرسل **/spx** أو كلمة **SPX** للحصول على توصية عقود **S&P 500 Options** الاقتصادية.\n"
         "⚡ أرسل **/top** لاستخراج أفضل أسهم المضاربة والعقود المتاحة."
     )
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def analyze_spx_option(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("⏳ جاري تحليل حركة SPX واختيار أفضل عقد أوبشن مناسب...")
+    await update.message.reply_text("⏳ جاري تحليل حركة SPX واختيار عقد أوبشن اقتصادي (OTM)...")
     data = analyze_option_signal("SPX")
     if data:
         await update.message.reply_text(format_option_report(data), parse_mode="Markdown")
